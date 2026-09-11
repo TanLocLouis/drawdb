@@ -12,6 +12,7 @@ import EnumsContextProvider from "../context/EnumsContext";
 import WorkSpace from "../components/Workspace";
 import { useThemedPage } from "../hooks";
 import CollabContextProvider from "../context/CollabContext";
+import ViewsContextProvider from "../context/ViewsContext"; 
 
 export default function Editor() {
   useThemedPage();
@@ -27,11 +28,13 @@ export default function Editor() {
                   <NotesContextProvider>
                     <TypesContextProvider>
                       <EnumsContextProvider>
-                        <TablesContextProvider>
-                          <SaveStateContextProvider>
-                            <WorkSpace />
-                          </SaveStateContextProvider>
-                        </TablesContextProvider>
+                        <ViewsContextProvider>
+                          <TablesContextProvider>
+                            <SaveStateContextProvider>
+                              <WorkSpace />
+                            </SaveStateContextProvider>
+                          </TablesContextProvider>
+                        </ViewsContextProvider>
                       </EnumsContextProvider>
                     </TypesContextProvider>
                   </NotesContextProvider>
