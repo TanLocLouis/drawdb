@@ -1,4 +1,5 @@
 import { databases } from "../../../../data/databases";
+import i18n from "../../../../i18n/i18n";
 
 const KILOBYTE = 1024;
 const MEGABYTE = 1024 * KILOBYTE;
@@ -14,7 +15,7 @@ export function formatSize(bytes) {
 }
 
 export function databaseName(database) {
-  return databases[database]?.name ?? "Generic";
+  return databases[database]?.name ?? i18n.t("generic");
 }
 
 export function ownerLabel(entry, currentUserId) {
@@ -36,7 +37,7 @@ function toEntry(raw, source, size) {
     diagramId: raw.diagramId,
     name: raw.name ?? "",
     database: raw.database || "generic",
-    owner: source === SOURCE.cloud ? (raw.owner ?? null) : null,
+    owner: source === SOURCE.cloud ? raw.owner ?? null : null,
     size,
     lastModified: toDate(raw.lastModified),
   };
@@ -45,16 +46,14 @@ function toEntry(raw, source, size) {
 export function mergeDiagrams(cloud, local) {
   return [
     ...cloud.map((d) => toEntry(d, SOURCE.cloud, d.sizeBytes ?? 0)),
-    ...local.map((d) =>
-      toEntry(d, SOURCE.local, JSON.stringify(d).length),
-    ),
+    ...local.map((d) => toEntry(d, SOURCE.local, JSON.stringify(d).length)),
   ];
 }
 
 export function databaseOptions(entries) {
   const present = [...new Set(entries.map((entry) => entry.database))];
   return [
-    { value: ALL, label: "All databases" },
+    { value: ALL, label: i18n.t("all_databases") },
     ...present.map((database) => ({
       value: database,
       label: databaseName(database),

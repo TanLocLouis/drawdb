@@ -733,11 +733,13 @@ export default function Canvas() {
           zoom: e.deltaY <= 0 ? prev.zoom * 1.05 : prev.zoom / 1.05,
         }));
       } else if (e.shiftKey) {
+        const horizontalDelta =
+          Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
         setTransform((prev) => ({
           ...prev,
           pan: {
             ...prev.pan,
-            x: prev.pan.x + e.deltaY / prev.zoom,
+            x: prev.pan.x + horizontalDelta / prev.zoom,
           },
         }));
       } else {

@@ -4,20 +4,22 @@ import SortableHeader from "./SortableHeader";
 import { SOURCE, databaseName, formatSize, ownerLabel } from "../diagram";
 
 function TypeCell({ entry }) {
+  const { t } = useTranslation();
   const isCloud = entry.source === SOURCE.cloud;
   return (
     <Tag size="small" color={isCloud ? "cyan" : "grey"}>
-      {isCloud ? "Cloud" : "Local"}
+      {isCloud ? t("cloud") : t("local")}
     </Tag>
   );
 }
 
 function OwnerCell({ entry, currentUserId }) {
+  const { t } = useTranslation();
   const label = ownerLabel(entry, currentUserId);
   if (label === "You") {
     return (
       <Tag size="small" color="blue">
-        You
+        {t("you")}
       </Tag>
     );
   }
@@ -25,7 +27,9 @@ function OwnerCell({ entry, currentUserId }) {
 }
 
 function formatTimestamp(date) {
-  return date ? `${date.toLocaleDateString()} ${date.toLocaleTimeString()}` : "";
+  return date
+    ? `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
+    : "";
 }
 
 function useColumns({ showType, showOwner, currentUserId }) {
@@ -37,13 +41,17 @@ function useColumns({ showType, showOwner, currentUserId }) {
       sortable: true,
       render: ({ entry }) => entry.name,
     },
-    showType && { key: "type", label: "Type", render: TypeCell },
+    showType && { key: "type", label: t("type"), render: TypeCell },
     showOwner && {
       key: "owner",
-      label: "Owner",
+      label: t("owner"),
       render: (props) => <OwnerCell {...props} currentUserId={currentUserId} />,
     },
-    { key: "database", label: "Database", render: ({ entry }) => databaseName(entry.database) },
+    {
+      key: "database",
+      label: t("database"),
+      render: ({ entry }) => databaseName(entry.database),
+    },
     {
       key: "lastModified",
       label: t("last_modified"),

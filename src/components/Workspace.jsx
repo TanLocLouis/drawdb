@@ -1,20 +1,14 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-  createContext,
-  useContext,
-} from "react";
+import { useState, useEffect, useCallback, useRef, createContext } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ControlPanel from "./EditorHeader/ControlPanel";
-import ExtensionsContext, { Slot } from "../context/ExtensionsContext";
+import { Slot } from "../context/ExtensionsContext";
 import Canvas from "./EditorCanvas/Canvas";
+import CollaborationCursors from "./CollaborationCursors";
 import { CanvasContextProvider } from "../context/CanvasContext";
 import SidePanel from "./EditorSidePanel/SidePanel";
 import { DB, State } from "../data/constants";
 import { db } from "../data/db";
+import { diagramApi } from "../api/diagrams";
 import {
   useLayout,
   useSettings,
@@ -28,6 +22,7 @@ import {
   useEnums,
   useViews,
   useNavigateWithParams,
+  useCollab,
 } from "../hooks";
 import FloatingControls from "./FloatingControls";
 import { Button, Modal, Tag } from "@douyinfe/semi-ui";
@@ -35,13 +30,7 @@ import { IconAlertTriangle } from "@douyinfe/semi-icons";
 import { useTranslation } from "react-i18next";
 import { databases } from "../data/databases";
 import { isRtl } from "../i18n/utils/rtl";
-import { useMatch, useParams, useSearchParams } from "react-router-dom";
-import { get, SHARE_FILENAME } from "../api/gists";
-import { mergeCustomTypes } from "../utils/customTypes";
-import {
-  readDismissedBanners,
-  addDismissedBanner,
-} from "../utils/dismissedBanners";
+import { useMatch, useParams } from "react-router-dom";
 
 export const IdContext = createContext({
   gistId: "",
@@ -55,7 +44,6 @@ const SIDEPANEL_MIN_WIDTH = 374;
 export default function WorkSpace({ forcedDiagramId } = {}) {
   const [gistId, setGistId] = useState("");
   const [version, setVersion] = useState("");
-  const [loadedFromGistId, setLoadedFromGistId] = useState("");
   const [title, setTitle] = useState("Untitled Diagram");
   const [resize, setResize] = useState(false);
   const [toolbarContainer, setToolbarContainer] = useState(null);
@@ -65,11 +53,10 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [selectedDb, setSelectedDb] = useState("");
 
-  const [diagramSource, setDiagramSource] = useState(null);
-  const [dismissedBanners, setDismissedBanners] =
-    useState(readDismissedBanners);
   const pendingNewIdRef = useRef(null);
   const loadedIdRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const applyingRemoteRef = useRef(false);
   const { layout, setLayout } = useLayout();
   const { settings } = useSettings();
   const { types, setTypes } = useTypes();
@@ -88,33 +75,34 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
     setDatabase,
   } = useDiagram();
   const { undoStack, redoStack, setUndoStack, setRedoStack } = useUndoRedo();
+  const {
+    connect,
+    disconnect,
+    sendSnapshot,
+    connectionState,
+    participants,
+    versionRef,
+  } = useCollab();
   const { t, i18n } = useTranslation();
-  let [searchParams, setSearchParams] = useSearchParams();
   const { id: routeDiagramId } = useParams();
   const loadedDiagramId = forcedDiagramId ?? routeDiagramId;
   const editorDiagramMatch = useMatch("/editor/diagrams/:id");
-  const isDiagram = forcedDiagramId ? true : editorDiagramMatch;
+  const directDiagramMatch = useMatch("/diagrams/:id");
+  const isDiagram = forcedDiagramId
+    ? true
+    : Boolean(editorDiagramMatch || directDiagramMatch);
   const isTemplate = useMatch("/editor/templates/:id");
 
   const navigate = useNavigateWithParams();
-  const extensionValues = useContext(ExtensionsContext);
-  const extensions = useMemo(() => extensionValues ?? {}, [extensionValues]);
-  const cloudOnly = typeof extensions.cloudSave === "function";
-  const cloudLoad = extensions.cloudLoad;
-
   const handleResize = (e) => {
     if (!resize) return;
     const w = isRtl(i18n.language) ? window.innerWidth - e.clientX : e.clientX;
     if (w > SIDEPANEL_MIN_WIDTH) setWidth(w);
   };
 
-  const buildCloudPayload = useCallback(
-    (targetId) => ({
-      diagramId: targetId,
+  const buildDocument = useCallback(
+    () => ({
       database,
-      name: title,
-      gistId: gistId ?? "",
-      lastModified: new Date(),
       tables,
       references: relationships,
       notes,
@@ -125,197 +113,99 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
       ...(databases[database].hasEnums && { enums }),
       ...(databases[database].hasTypes && { types }),
     }),
+    [database, tables, relationships, notes, areas, transform, enums, types],
+  );
+
+  const applyDiagramState = useCallback(
+    (serverDiagram, { remote = false } = {}) => {
+      const diagram = serverDiagram.document ?? serverDiagram;
+      applyingRemoteRef.current = true;
+      versionRef.current = serverDiagram.version ?? versionRef.current;
+      setDatabase(diagram.database || DB.GENERIC);
+      setTitle(serverDiagram.name ?? diagram.name ?? "Untitled diagram");
+      setTables(diagram.tables ?? []);
+      setRelationships(diagram.references ?? diagram.relationships ?? []);
+      setAreas(diagram.areas ?? diagram.subjectAreas ?? []);
+      setNotes(diagram.notes ?? []);
+      if (!remote) {
+        setTransform({
+          pan: diagram.pan ?? { x: 0, y: 0 },
+          zoom: diagram.zoom ?? 1,
+        });
+      }
+      setTypes(diagram.types ?? []);
+      setEnums(diagram.enums ?? []);
+      if (!remote) {
+        setUndoStack([]);
+        setRedoStack([]);
+      }
+    },
     [
-      database,
-      title,
-      gistId,
-      tables,
-      relationships,
-      notes,
-      areas,
-      views,
-      transform,
-      enums,
-      types,
+      setAreas,
+      setDatabase,
+      setEnums,
+      setNotes,
+      setRedoStack,
+      setRelationships,
+      setTables,
+      setTransform,
+      setTypes,
+      setUndoStack,
+      versionRef,
     ],
   );
 
   const save = useCallback(async () => {
-    if (searchParams.has("shareId")) {
-      searchParams.delete("shareId");
-      setSearchParams(searchParams, { replace: true });
-    }
-
-    if (cloudOnly && diagramSource !== "local") {
-      const isNew =
-        !loadedDiagramId || loadedDiagramId === "blank" || isTemplate;
-      const targetId = isNew
-        ? (pendingNewIdRef.current ??= uuidv4())
-        : loadedDiagramId;
-      try {
-        await extensions.cloudSave(buildCloudPayload(targetId), { isNew });
-        if (isNew) {
-          pendingNewIdRef.current = null;
-          navigate(`/editor/diagrams/${targetId}`, { replace: true });
-        }
-        setSaveState(State.SAVED);
-        setLastSaved(new Date().toLocaleString());
-      } catch (err) {
-        console.warn("cloud autosave failed:", err);
-        if (err?.response?.status === 402) {
-          setSaveState(State.NONE);
-          navigate("/checkout?tier=solo_pro");
-          return;
-        }
-        setSaveState(State.ERROR);
-      }
-      return;
-    }
-
-    if (isTemplate || (!loadedDiagramId && !isTemplate && !isDiagram)) {
-      const diagramId = uuidv4();
-      await db.diagrams
-        .add({
-          diagramId,
-          database: database,
-          name: title,
-          gistId: gistId ?? "",
-          lastModified: new Date(),
-          tables: tables,
-          references: relationships,
-          notes: notes,
-          areas: areas,
-          views: views,
-          pan: transform.pan,
-          zoom: transform.zoom,
-          loadedFromGistId: loadedFromGistId,
-          ...(databases[database].hasEnums && { enums: enums }),
-          ...(databases[database].hasTypes && { types: types }),
-        })
-        .then(() => {
-          navigate(`/editor/diagrams/${diagramId}`, { replace: true });
-          setSaveState(State.SAVED);
-          setLastSaved(new Date().toLocaleString());
-        });
-    } else {
-      await db.diagrams
-        .where("diagramId")
-        .equals(loadedDiagramId)
-        .modify({
-          database: database,
-          name: title,
-          lastModified: new Date(),
-          tables: tables,
-          references: relationships,
-          notes: notes,
-          areas: areas,
-          views: views,
-          gistId: gistId ?? "",
-          pan: transform.pan,
-          zoom: transform.zoom,
-          loadedFromGistId: loadedFromGistId,
-          ...(databases[database].hasEnums && { enums: enums }),
-          ...(databases[database].hasTypes && { types: types }),
-        })
-        .then(() => {
-          setSaveState(State.SAVED);
-          setLastSaved(new Date().toLocaleString());
-        });
-    }
-  }, [
-    cloudOnly,
-    diagramSource,
-    buildCloudPayload,
-    extensions,
-    searchParams,
-    setSearchParams,
-    tables,
-    relationships,
-    notes,
-    areas,
-    views,
-    types,
-    title,
-    transform,
-    setSaveState,
-    setLastSaved,
-    database,
-    enums,
-    gistId,
-    loadedFromGistId,
-    isDiagram,
-    isTemplate,
-    loadedDiagramId,
-    navigate,
-  ]);
-
-  const moveToCloud = useCallback(async () => {
-    if (typeof extensions.cloudSave !== "function" || !loadedDiagramId) return;
-    setSaveState(State.SAVING);
+    const isNew = isTemplate || !loadedDiagramId || loadedDiagramId === "blank";
+    const targetId = isNew
+      ? (pendingNewIdRef.current ??= uuidv4())
+      : loadedDiagramId;
     try {
-      await extensions.cloudSave(buildCloudPayload(loadedDiagramId), {
-        isNew: true,
-      });
-      await db.diagrams.where("diagramId").equals(loadedDiagramId).delete();
-      setDiagramSource("cloud");
-      if (typeof cloudLoad === "function") {
-        await cloudLoad(loadedDiagramId);
+      if (isNew) {
+        const created = await diagramApi.create({
+          id: targetId,
+          name: title,
+          document: buildDocument(),
+        });
+        versionRef.current = created.version;
+        pendingNewIdRef.current = null;
+        navigate(`/diagrams/${targetId}`, { replace: true });
+      } else if (connectionState === "connected") {
+        await sendSnapshot(title, buildDocument());
+      } else {
+        const updated = await diagramApi.update(targetId, {
+          name: title,
+          document: buildDocument(),
+          baseVersion: versionRef.current,
+        });
+        versionRef.current = updated.version;
       }
       setSaveState(State.SAVED);
       setLastSaved(new Date().toLocaleString());
-    } catch (err) {
-      console.warn("move to cloud failed:", err);
+    } catch (error) {
+      if (error.diagram) applyDiagramState(error.diagram, { remote: true });
+      console.warn("server autosave failed:", error);
       setSaveState(State.ERROR);
     }
   }, [
-    extensions,
-    loadedDiagramId,
-    buildCloudPayload,
+    buildDocument,
+    title,
     setSaveState,
-    cloudLoad,
+    isTemplate,
+    loadedDiagramId,
+    navigate,
+    connectionState,
+    sendSnapshot,
+    versionRef,
+    applyDiagramState,
   ]);
-
-  const dismissMoveToCloud = () => {
-    if (!loadedDiagramId) return;
-    setDismissedBanners((prev) =>
-      addDismissedBanner(prev, `move:${loadedDiagramId}`),
-    );
-  };
 
   const load = useCallback(async () => {
     const previousLoadedId = loadedIdRef.current;
     loadedIdRef.current = loadedDiagramId ?? null;
 
-    const fetchDiagram = async (id) => {
-      const localDiagram = await db.diagrams
-        .where("diagramId")
-        .equals(id)
-        .first();
-      if (localDiagram) return { diagram: localDiagram, source: "local" };
-
-      if (typeof cloudLoad === "function") {
-        const cloudDiagram = await cloudLoad(id);
-        if (cloudDiagram) return { diagram: cloudDiagram, source: "cloud" };
-      }
-      return { diagram: null, source: null };
-    };
-
-    const applyDiagramState = (diagram) => {
-      setDatabase(diagram.database || DB.GENERIC);
-      setGistId(diagram.gistId);
-      setLoadedFromGistId(diagram.loadedFromGistId);
-      setTitle(diagram.name);
-      setTables(diagram.tables);
-      setRelationships(diagram.references);
-      setAreas(diagram.areas);
-      setNotes(diagram.notes);
-      setTransform({ pan: diagram.pan, zoom: diagram.zoom });
-      setTypes(diagram.types ?? []);
-      setEnums(diagram.enums ?? []);
-      setViews(diagram.views ?? []);
-    };
-
     const resetEditorState = () => {
+      disconnect();
       setTables([]);
       setRelationships([]);
       setAreas([]);
@@ -328,41 +218,36 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
       setTransform({ zoom: 1, pan: { x: 0, y: 0 } });
       setTitle("Untitled diagram");
       setGistId("");
-      setLoadedFromGistId("");
       setLayout((prev) => ({ ...prev, readOnly: false }));
-      setDiagramSource(null);
-    };
-
-    const loadLatestDiagram = async () => {
-      let diagram;
-      try {
-        diagram = await db.diagrams.orderBy("lastModified").last();
-      } catch (error) {
-        console.log(error);
-        return;
-      }
-      if (!diagram) {
-        if (selectedDb === "") setShowSelectDbModal(true);
-        return;
-      }
-      setDiagramSource("local");
-      applyDiagramState(diagram);
-      navigate(`/editor/diagrams/${diagram.diagramId}`, { replace: true });
     };
 
     const loadDiagram = async (id) => {
-      const { diagram, source } = await fetchDiagram(id);
-      if (!diagram) return;
-
-      setDiagramSource(source);
-      if (source === "local") {
+      try {
+        const diagram = await diagramApi.get(id);
         setLayout((prev) => ({ ...prev, readOnly: false }));
-      } else if (typeof diagram.canWrite === "boolean") {
-        setLayout((prev) => ({ ...prev, readOnly: !diagram.canWrite }));
+        applyDiagramState(diagram);
+        connect({
+          diagramId: id,
+          version: diagram.version,
+          onSnapshot: (snapshot) => {
+            applyDiagramState(snapshot, { remote: true });
+            setSaveState(State.SAVED);
+            setLastSaved(new Date().toLocaleString());
+          },
+          onDelta: (operation) => {
+            if (operation?.type !== "table.move") return;
+            const { id: tableId, x, y } = operation.payload;
+            setTables((current) =>
+              current.map((table) =>
+                table.id === tableId ? { ...table, x, y } : table,
+              ),
+            );
+          },
+        });
+      } catch (error) {
+        console.warn("diagram load failed:", error);
+        setSaveState(State.FAILED_TO_LOAD);
       }
-      applyDiagramState(diagram);
-      setUndoStack([]);
-      setRedoStack([]);
     };
 
     const loadTemplate = async (id) => {
@@ -375,7 +260,7 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
         if (selectedDb === "") setShowSelectDbModal(true);
         return;
       }
-      setDiagramSource(null);
+      disconnect();
       setDatabase(template.database || DB.GENERIC);
       setTitle(template.title);
       setTables(template.tables);
@@ -390,51 +275,9 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
       setViews(template.views ?? []);
     };
 
-    const loadFromGist = async (shareId, diagramId = null) => {
-      try {
-        const { data } = await get(shareId);
-        const parsed = JSON.parse(data.files[SHARE_FILENAME].content);
-        setDiagramSource(null);
-        setUndoStack([]);
-        setRedoStack([]);
-        setGistId(shareId);
-        setLoadedFromGistId(shareId);
-        setDatabase(parsed.database);
-        setTitle(parsed.title);
-        setTables(parsed.tables);
-        setRelationships(parsed.relationships);
-        setNotes(parsed.notes);
-        setAreas(parsed.subjectAreas);
-        setTransform(parsed.transform);
-        setTypes(parsed.types ?? []);
-        setEnums(parsed.enums ?? []);
-        setViews(parsed.views ?? []);
-        if (parsed.customTypes) mergeCustomTypes(parsed.customTypes);
-        if (diagramId) {
-          navigate(`/editor/diagrams/${diagramId}`, { replace: true });
-        }
-      } catch (e) {
-        console.log(e);
-        setSaveState(State.FAILED_TO_LOAD);
-      }
-    };
-
-    const shareId = searchParams.get("shareId");
-    if (shareId) {
-      const existingDiagram = await db.diagrams.get({
-        loadedFromGistId: shareId,
-      });
-      await loadFromGist(shareId, existingDiagram?.diagramId || null);
-      return;
-    }
-
     if (!loadedDiagramId) {
-      if (cloudOnly) {
-        if (previousLoadedId != null) resetEditorState();
-        if (selectedDb === "") setShowSelectDbModal(true);
-        return;
-      }
-      await loadLatestDiagram();
+      if (previousLoadedId != null) resetEditorState();
+      if (selectedDb === "") setShowSelectDbModal(true);
       return;
     }
 
@@ -448,7 +291,9 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
       return;
     }
   }, [
-    cloudLoad,
+    applyDiagramState,
+    connect,
+    disconnect,
     setTransform,
     setRedoStack,
     setUndoStack,
@@ -463,12 +308,9 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
     selectedDb,
     setSaveState,
     setLayout,
-    searchParams,
-    navigate,
     isDiagram,
     isTemplate,
     loadedDiagramId,
-    cloudOnly,
   ]);
 
   const returnToCurrentDiagram = async () => {
@@ -478,6 +320,10 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
   };
 
   useEffect(() => {
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
     if (
       tables?.length === 0 &&
       areas?.length === 0 &&
@@ -507,11 +353,19 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
   ]);
 
   useEffect(() => {
+    // A remote snapshot may only change values that are intentionally absent
+    // from the autosave dependency list. Do not let its suppression flag leak
+    // into the user's next local edit in that case.
+    applyingRemoteRef.current = false;
+  });
+
+  useEffect(() => {
     if (layout.readOnly) return;
-
     if (saveState !== State.SAVING) return;
-
-    save();
+    if (applyingRemoteRef.current) return;
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(save, 600);
+    return () => window.clearTimeout(saveTimerRef.current);
   }, [saveState, layout, save]);
 
   useEffect(() => {
@@ -527,7 +381,6 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
           title={title}
           setTitle={setTitle}
           lastSaved={lastSaved}
-          setLastSaved={setLastSaved}
           toolbarContainer={toolbarContainer}
         />
       </IdContext.Provider>
@@ -535,7 +388,10 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
         className="flex h-full overflow-y-auto"
         onPointerUp={(e) => e.isPrimary && setResize(false)}
         onPointerLeave={(e) => e.isPrimary && setResize(false)}
-        onPointerMove={(e) => e.isPrimary && handleResize(e)}
+        onPointerMove={(e) => {
+          if (!e.isPrimary) return;
+          handleResize(e);
+        }}
         onPointerDown={(e) => {
           // Required for onPointerLeave to trigger when a touch pointer leaves
           // https://stackoverflow.com/a/70976017/1137077
@@ -549,8 +405,32 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
         <div className="relative flex-1 min-w-0 h-full overflow-hidden">
           <CanvasContextProvider className="h-full w-full">
             <Canvas saveState={saveState} setSaveState={setSaveState} />
+            <CollaborationCursors />
           </CanvasContextProvider>
           <Slot name="canvas-overlay" />
+          {isDiagram && loadedDiagramId && (
+            <div className="pointer-events-none absolute right-3 top-3 z-40 flex items-center gap-2 rounded-full border border-zinc-200 bg-white/90 px-3 py-1.5 text-xs text-zinc-800 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-100">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  connectionState === "connected"
+                    ? "bg-emerald-500"
+                    : connectionState === "connecting"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                }`}
+              />
+              <span>
+                {t(`collaboration_${connectionState}`, connectionState)}
+              </span>
+              {participants.length > 0 && (
+                <span className="text-zinc-600 dark:text-zinc-300">
+                  {t("collaboration_participants", {
+                    count: participants.length,
+                  })}
+                </span>
+              )}
+            </div>
+          )}
           {layout.toolbar && (
             <div
               ref={setToolbarContainer}
@@ -574,37 +454,6 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
               </Button>
             </div>
           )}
-          {(cloudOnly || typeof extensions.moveToCloudUpgrade === "function") &&
-            diagramSource === "local" &&
-            !version &&
-            !dismissedBanners.has(`move:${loadedDiagramId}`) && (
-              <div className="pointer-events-none absolute inset-x-0 top-3 z-50 flex justify-center">
-                <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-blue-300 bg-blue-50 px-5 py-1.5 shadow-md dark:border-sky-900/50 dark:bg-sky-900/30">
-                  <i className="bi bi-hdd" />
-                  <span className="text-sm">
-                    This diagram is stored locally on your browser. Move it to
-                    the cloud?
-                  </span>
-                  <Button
-                    size="small"
-                    theme="solid"
-                    onClick={
-                      cloudOnly ? moveToCloud : extensions.moveToCloudUpgrade
-                    }
-                  >
-                    Move
-                  </Button>
-                  <Button
-                    size="small"
-                    theme="borderless"
-                    type="tertiary"
-                    aria-label="Dismiss"
-                    icon={<i className="bi bi-x-lg" />}
-                    onClick={dismissMoveToCloud}
-                  />
-                </div>
-              </div>
-            )}
           {!(layout.sidebar || layout.toolbar || layout.header) && (
             <div className="fixed right-5 bottom-4">
               <FloatingControls />
