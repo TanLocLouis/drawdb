@@ -9,38 +9,38 @@ import TypesContextProvider from "../context/TypesContext";
 import SettingsContextProvider from "../context/SettingsContext";
 import SaveStateContextProvider from "../context/SaveStateContext";
 import EnumsContextProvider from "../context/EnumsContext";
-import ViewsContextProvider from "../context/ViewsContext";
 import WorkSpace from "../components/Workspace";
 import { useThemedPage } from "../hooks";
+import CollabContextProvider from "../context/CollabContext";
 
 export default function Editor() {
   useThemedPage();
 
   return (
     <SettingsContextProvider>
-      <LayoutContextProvider>
-        <TransformContextProvider>
-          <UndoRedoContextProvider>
-            <SelectContextProvider>
-              <AreasContextProvider>
-                <NotesContextProvider>
-                  <TypesContextProvider>
-                    <EnumsContextProvider>
-                      <ViewsContextProvider>
+      <CollabContextProvider>
+        <LayoutContextProvider>
+          <TransformContextProvider>
+            <UndoRedoContextProvider>
+              <SelectContextProvider>
+                <AreasContextProvider>
+                  <NotesContextProvider>
+                    <TypesContextProvider>
+                      <EnumsContextProvider>
                         <TablesContextProvider>
                           <SaveStateContextProvider>
                             <WorkSpace />
                           </SaveStateContextProvider>
                         </TablesContextProvider>
-                      </ViewsContextProvider>
-                    </EnumsContextProvider>
-                  </TypesContextProvider>
-                </NotesContextProvider>
-              </AreasContextProvider>
-            </SelectContextProvider>
-          </UndoRedoContextProvider>
-        </TransformContextProvider>
-      </LayoutContextProvider>
+                      </EnumsContextProvider>
+                    </TypesContextProvider>
+                  </NotesContextProvider>
+                </AreasContextProvider>
+              </SelectContextProvider>
+            </UndoRedoContextProvider>
+          </TransformContextProvider>
+        </LayoutContextProvider>
+      </CollabContextProvider>
     </SettingsContextProvider>
   );
 }

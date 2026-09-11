@@ -25,14 +25,16 @@ export default function App() {
     <BrowserRouter>
       <SettingsContextProvider>
         <RestoreScroll />
-        {isLegacyHost() ? (
-          <div className="h-full flex flex-col">
-            <MigrationBanner />
-            <div className="flex-1 min-h-0">{routes}</div>
-          </div>
-        ) : (
-          routes
-        )}
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/editor" element={<Editor />} />
+          <Route path="/editor/diagrams/:id" element={<Editor />} />
+          <Route path="/diagrams/:id" element={<Editor />} />
+          <Route path="/editor/templates/:id" element={<Editor />} />
+          <Route path="/bug-report" element={<BugReport />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </SettingsContextProvider>
     </BrowserRouter>
   );

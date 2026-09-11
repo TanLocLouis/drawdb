@@ -4,17 +4,12 @@ import { templateSeeds } from "./seeds";
 
 export const db = new Dexie("drawDB");
 
-db.version(67)
+db.version(68)
   .stores({
-    diagrams: "++id, lastModified, loadedFromGistId, diagramId",
+    diagrams: null,
     templates: "++id, custom, templateId",
   })
   .upgrade(async (tx) => {
-    await tx.diagrams.toCollection().modify((diagram) => {
-      if (!diagram.diagramId) {
-        diagram.diagramId = uuidv4();
-      }
-    });
     await tx.templates.toCollection().modify((template) => {
       if (!template.templateId) {
         template.templateId = uuidv4();

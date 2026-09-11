@@ -32,7 +32,7 @@ export default function SearchBar({ tables }) {
 
   return (
     <TreeSelect
-      searchPosition="trigger"
+      searchPosition="dropdown"
       dropdownStyle={{ maxHeight: 400, overflow: "auto" }}
       treeData={treeData}
       prefix={<IconSearch />}

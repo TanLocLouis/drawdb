@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { db } from "../data/db";
 import { saveAs } from "file-saver";
+import { diagramApi } from "../api/diagrams";
 
 const zip = new JSZip();
 
@@ -18,12 +19,20 @@ const formatDiagram = (diagram) => {
 export async function exportSavedData() {
   const diagramsFolder = zip.folder("diagrams");
 
-  await db.diagrams.each((diagram) => {
+  const summaries = await diagramApi.list();
+  const diagrams = await Promise.all(
+    summaries.map((diagram) => diagramApi.get(diagram.id)),
+  );
+  diagrams.forEach((serverDiagram) => {
+    const diagram = {
+      ...serverDiagram.document,
+      name: serverDiagram.name,
+      diagramId: serverDiagram.id,
+    };
     diagramsFolder.file(
-      `${diagram.name}(${diagram.id}).json`,
+      `${diagram.name}(${diagram.diagramId}).json`,
       JSON.stringify(formatDiagram(diagram), null, 2),
     );
-    return true;
   });
 
   const templatesFolder = zip.folder("templates");

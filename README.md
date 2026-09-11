@@ -1,42 +1,57 @@
 <div align="center">
     <img width="64" alt="drawDB logo" src="./src/assets/icon-dark.png">
-    <h1>drawDB</h1>
+    <h1>drawDB Collaborative</h1>
 </div>
 
-<h3 align="center">Free, simple, and intuitive database schema editor and SQL generator.</h3>
+<h3 align="center">A self-hosted, real-time collaborative database schema editor.</h3>
 
 <div align="center" style="margin-bottom:12px;">
-    <a href="https://drawdb.app/" style="display: flex; align-items: center;">
-        <img src="https://img.shields.io/badge/Start%20building-grey" alt="drawDB"/>
+    <a href="https://github.com/yms2772/drawdb-collaborative" style="display: flex; align-items: center;">
+        <img src="https://img.shields.io/badge/Source-GitHub-grey?logo=github" alt="Source code"/>
     </a>
-    <a href="https://discord.gg/BrjZgNrmR6" style="display: flex; align-items: center;">
-        <img src="https://img.shields.io/discord/1196658537208758412.svg?label=Join%20the%20Discord&logo=discord" alt="Discord"/>
-    </a>
-    <a href="https://x.com/drawDB_" style="display: flex; align-items: center;">
-        <img src="https://img.shields.io/badge/Follow%20us%20on%20X-blue?logo=X" alt="Follow us on X"/>
+    <a href="./LICENSE" style="display: flex; align-items: center;">
+        <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="AGPL-3.0 license"/>
     </a>
 </div>
 
 <h3 align="center"><img width="700" style="border-radius:5px;" alt="drawDB screenshot demo" src="drawdb.png"></h3>
 
-DrawDB is a robust and user-friendly database entity relationship diagram (ERD) editor right in your browser. Build diagrams with a few clicks, export and import SQL scripts, generate migrations, customize your editor, and more without creating an account. See the full set of features on [here](https://drawdb.app/).
+drawDB Collaborative is an unofficial fork of
+[drawDB](https://github.com/drawdb-io/drawdb). It adds centralized SQLite
+storage and real-time WebSocket collaboration while retaining drawDB's
+browser-based ERD editing and SQL import/export features.
+
+This fork is independently maintained and is not affiliated with or endorsed
+by the original drawDB maintainers.
+
+Key additions include:
+
+- Centralized diagram storage backed by SQLite
+- Real-time table movement and editing between participants
+- Participant presence and viewport-aware collaborative cursors
+- Optimistic version checks that prevent stale clients from overwriting changes
+- A single-container setup for the frontend, API, WebSocket server, and storage
 
 ## Getting Started
 
 ### Local Development
 
 ```bash
-git clone https://github.com/drawdb-io/drawdb
-cd drawdb
+git clone https://github.com/yms2772/drawdb-collaborative.git
+cd drawdb-collaborative
 npm install
 npm run dev
 ```
 
+This starts both the Vite frontend on port `5173` and the API/WebSocket server
+on port `3000`. Use `npm run dev:client` or `npm run dev:server` when only one
+side is needed.
+
 ### Build
 
 ```bash
-git clone https://github.com/drawdb-io/drawdb
-cd drawdb
+git clone https://github.com/yms2772/drawdb-collaborative.git
+cd drawdb-collaborative
 npm install
 npm run build
 ```
@@ -44,15 +59,58 @@ npm run build
 ### Docker Build
 
 ```bash
-docker build -t drawdb .
-docker run -p 3000:80 drawdb
+docker compose up --build
 ```
 
-If you want to enable sharing, set up the [server](https://github.com/drawdb-io/drawdb-server) and environment variables according to `.env.sample`. This is optional unless you need to share files.
+Open `http://localhost:3000`. The single application container serves the
+frontend, diagram API, WebSocket collaboration endpoint, and SQLite storage.
+The Compose configuration persists the database in the `drawdb-data` volume.
+
+### Collaborative self-hosting
+
+Diagrams are stored centrally in SQLite; IndexedDB is not used for diagram
+storage. `DATABASE_PATH` controls the database location and defaults to
+`./data/drawdb.sqlite` outside the container. Diagram URLs use
+`/diagrams/:diagramId`, and everyone opening the same URL joins the same live
+session automatically.
+
+The application exposes:
+
+- `GET|POST /api/diagrams`
+- `GET|PUT|DELETE /api/diagrams/:diagramId`
+- `/ws/diagrams/:diagramId` (WebSocket)
+
+Snapshot saves are debounced and guarded by an optimistic version. Stale
+clients receive the current snapshot instead of silently overwriting it.
+Reconnects send the last known version and converge on the server snapshot.
+
+When running behind a reverse proxy, forward `X-Forwarded-For` and
+`X-Forwarded-Proto`, and allow WebSocket `Upgrade`/`Connection` headers on the
+`/ws` path. The browser derives `ws://` or `wss://` from the current origin, so
+no public hostname or `localhost` value is required in production.
 
 ## Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
-## Support
-- Join discussions: [Discord](https://discord.gg/BrjZgNrmR6)
+## License and source availability
+
+This project is distributed under the
+[GNU Affero General Public License v3.0](LICENSE). It is based on
+[drawDB](https://github.com/drawdb-io/drawdb), which is also distributed under
+the GNU AGPL v3.0.
+
+If you interact with a deployed, modified version of this application over a
+network, you are entitled to receive the Corresponding Source for that version
+under section 13 of the GNU AGPL. The source for this version is available at:
+
+https://github.com/yms2772/drawdb-collaborative
+
+Copyright and attribution notices from the original project are retained. See
+the repository history for changes made by this fork.
+
+## Upstream project
+
+- Original source: [drawdb-io/drawdb](https://github.com/drawdb-io/drawdb)
+- Original project website: [drawdb.app](https://drawdb.app/)
+- Upstream community: [Discord](https://discord.gg/BrjZgNrmR6)

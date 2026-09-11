@@ -28,6 +28,7 @@ import {
 import { isRtl } from "../../../i18n/utils/rtl";
 import { useExtensions } from "../../../context/ExtensionsContext";
 import { importSQL } from "../../../utils/importSQL";
+import { normalizeSQLForParser } from "../../../utils/importSQL/normalize";
 import {
   allowedTypesFor,
   normalizeAiDiagram,
@@ -46,7 +47,6 @@ import New from "./New";
 import Open from "./Open";
 import Rename from "./Rename";
 import SetTableWidth from "./SetTableWidth";
-import Share from "./Share";
 import { mergeCustomTypes } from "../../../utils/customTypes";
 
 const extensionToLanguage = {
@@ -133,8 +133,12 @@ export default function Modal({
         ast = oracleParser.parse(importSource.src);
       } else {
         const parser = new Parser();
+        const normalizedSource = normalizeSQLForParser(
+          importSource.src,
+          targetDatabase,
+        );
 
-        ast = parser.astify(importSource.src, {
+        ast = parser.astify(normalizedSource, {
           database: targetDatabase,
         });
       }
@@ -379,8 +383,6 @@ export default function Modal({
             setLanguage={setUncontrolledLanguage}
           />
         );
-      case MODAL.SHARE:
-        return <Share title={title} setModal={setModal} />;
       default:
         return <></>;
     }
@@ -454,10 +456,16 @@ export default function Modal({
       closeOnEsc={true}
       okText={getOkText(modal)}
       okButtonProps={{
-        disabled: okDisabled,
-        hidden: modal === MODAL.SHARE,
+        disabled:
+          (error && error?.type === STATUS.ERROR) ||
+          (modal === MODAL.IMPORT &&
+            (error.type === STATUS.ERROR || !importData)) ||
+          (modal === MODAL.RENAME && title === "") ||
+          ((modal === MODAL.IMG || modal === MODAL.CODE) && !exportData.data) ||
+          (modal === MODAL.SAVEAS && saveAsTitle === "") ||
+          (modal === MODAL.IMPORT_SRC && importSource.src === ""),
       }}
-      hasCancel={modal !== MODAL.SHARE}
+      hasCancel
       cancelText={t("cancel")}
       width={getModalWidth(modal)}
       bodyStyle={{

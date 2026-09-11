@@ -19,6 +19,7 @@ export const CanvasContext = createContext({
     },
   },
   pointer: {
+    active: false,
     spaces: {
       screen: {
         x: 0,
@@ -112,6 +113,7 @@ export function CanvasContextProvider({ children, ...attrs }) {
     x: 0,
     y: 0,
   });
+  const [pointerActive, setPointerActive] = useState(false);
   const pointerDiagramCoords = useMemo(
     () => toDiagramSpace(pointerScreenCoords),
     [pointerScreenCoords, toDiagramSpace],
@@ -127,6 +129,7 @@ export function CanvasContextProvider({ children, ...attrs }) {
 
     const canvasBounds = targetElm.getBoundingClientRect();
 
+    setPointerActive(true);
     setPointerScreenCoords({
       x: e.clientX - canvasBounds.left,
       y: e.clientY - canvasBounds.top,
@@ -148,6 +151,7 @@ export function CanvasContextProvider({ children, ...attrs }) {
       toScreenSpace,
     },
     pointer: {
+      active: pointerActive,
       spaces: {
         screen: pointerScreenCoords,
         diagram: pointerDiagramCoords,
@@ -163,5 +167,5 @@ export function CanvasContextProvider({ children, ...attrs }) {
         {children}
       </div>
     </CanvasContext.Provider>
-  )
+  );
 }
