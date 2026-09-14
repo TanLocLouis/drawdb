@@ -47,6 +47,7 @@ import New from "./New";
 import Open from "./Open";
 import Rename from "./Rename";
 import SetTableWidth from "./SetTableWidth";
+import SetZoomSensitivity from "./SetZoomSensitivity";
 import { mergeCustomTypes } from "../../../utils/customTypes";
 
 const extensionToLanguage = {
@@ -82,6 +83,7 @@ export default function Modal({
     i18n.language,
   );
   const [tempTableWidth, setTempTableWidth] = useState(settings.tableWidth);
+  const [tempZoomSensitivity, setTempZoomSensitivity] = useState(settings.zoomSensitivity);
   const [importSource, setImportSource] = useState({
     src: "",
     overwrite: false,
@@ -282,6 +284,10 @@ export default function Modal({
         setSettings((prev) => ({ ...prev, tableWidth: tempTableWidth }));
         setModal(MODAL.NONE);
         return;
+      case MODAL.ZOOM_SENSITIVITY:
+        setSettings((prev) => ({ ...prev, zoomSensitivity: tempZoomSensitivity }));
+        setModal(MODAL.NONE);
+        return;
       default:
         setModal(MODAL.NONE);
         return;
@@ -376,6 +382,13 @@ export default function Modal({
             setTempWidth={setTempTableWidth}
           />
         );
+      case MODAL.ZOOM_SENSITIVITY:
+        return (
+          <SetZoomSensitivity
+            value={tempZoomSensitivity}
+            onChange={setTempZoomSensitivity}
+          />
+        );
       case MODAL.LANGUAGE:
         return (
           <Language
@@ -392,6 +405,7 @@ export default function Modal({
     if (modal === MODAL.RENAME) setUncontrolledTitle(title);
     if (modal === MODAL.LANGUAGE) setUncontrolledLanguage(i18n.language);
     if (modal === MODAL.TABLE_WIDTH) setTempTableWidth(settings.tableWidth);
+    if (modal === MODAL.ZOOM_SENSITIVITY) setTempZoomSensitivity(settings.zoomSensitivity);
     setModal(MODAL.NONE);
   };
 

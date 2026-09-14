@@ -716,22 +716,28 @@ export default function Canvas() {
       e.preventDefault();
 
       if (e.ctrlKey || e.metaKey) {
-        const eagernessFactor = 0.05;
-        setTransform((prev) => ({
-          pan: {
-            x:
-              prev.pan.x -
-              (pointer.spaces.diagram.x - prev.pan.x) *
-                eagernessFactor *
-                Math.sign(e.deltaY),
-            y:
-              prev.pan.y -
-              (pointer.spaces.diagram.y - prev.pan.y) *
-                eagernessFactor *
-                Math.sign(e.deltaY),
-          },
-          zoom: e.deltaY <= 0 ? prev.zoom * 1.05 : prev.zoom / 1.05,
-        }));
+        let delta = e.deltaY;
+        if (Math.abs(delta) > 50) {
+          delta = Math.sign(delta) * 15;
+        }
+
+        const divisor = 1000 / settings.zoomSensitivity;
+        const zoomFactor = Math.exp(-delta / divisor);
+        setTransform((prev) => {
+          const newZoom = prev.zoom * zoomFactor;
+          const zoomRatio = newZoom / prev.zoom;
+          return {
+            pan: {
+              x:
+                prev.pan.x +
+                (pointer.spaces.diagram.x - prev.pan.x) * (1 - 1 / zoomRatio),
+              y:
+                prev.pan.y +
+                (pointer.spaces.diagram.y - prev.pan.y) * (1 - 1 / zoomRatio),
+            },
+            zoom: newZoom,
+          };
+        });
       } else if (e.shiftKey) {
         const horizontalDelta =
           Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -747,6 +753,7 @@ export default function Canvas() {
           ...prev,
           pan: {
             ...prev.pan,
+            x: prev.pan.x + e.deltaX / prev.zoom,
             y: prev.pan.y + e.deltaY / prev.zoom,
           },
         }));
