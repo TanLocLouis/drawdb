@@ -1875,6 +1875,9 @@ export default function ControlPanel({
         function: () => setModal(MODAL.TABLE_WIDTH),
         disabled: layout.readOnly,
       },
+      zoom_sensitivity: {
+        function: () => setModal(MODAL.ZOOM_SENSITIVITY),
+      },
       configure_custom_types: {
         function: () => setModal(MODAL.CONFIG_CUSTOM_TYPES),
         disabled: layout.readOnly,

@@ -21,6 +21,8 @@ export const getModalTitle = (modal) => {
       return i18n.t("create_new_diagram");
     case MODAL.TABLE_WIDTH:
       return i18n.t("table_width");
+    case MODAL.ZOOM_SENSITIVITY:
+      return i18n.t("zoom_sensitivity");
     case MODAL.LANGUAGE:
       return i18n.t("language");
     default:

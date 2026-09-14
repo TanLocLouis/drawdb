@@ -16,6 +16,7 @@ const defaultSettings = {
   tableWidth: tableWidth,
   showDebugCoordinates: false,
   showComments: false,
+  zoomSensitivity: 5,
 };
 
 export const SettingsContext = createContext({
