@@ -19,11 +19,11 @@ import {
   useEnums,
   useNavigateWithParams,
   useNotes,
-  useSettings,
   useTransform,
   useTypes,
   useUndoRedo,
   useViews,
+  useSettings,
 } from "../../../hooks";
 import { isRtl } from "../../../i18n/utils/rtl";
 import { useExtensions } from "../../../context/ExtensionsContext";
@@ -75,9 +75,9 @@ export default function Modal({
   const { setTypes } = useTypes();
   const { setEnums } = useEnums();
   const { setViews } = useViews();
+  const { settings, setSettings } = useSettings();
   const { setTransform } = useTransform();
   const { setUndoStack, setRedoStack } = useUndoRedo();
-  const { settings, setSettings } = useSettings();
   const [uncontrolledTitle, setUncontrolledTitle] = useState(title);
   const [uncontrolledLanguage, setUncontrolledLanguage] = useState(
     i18n.language,
@@ -210,7 +210,10 @@ export default function Modal({
 
       if (!result) return;
 
-      const { diagram, warnings } = normalizeAiDiagram(result.diagram, database);
+      const { diagram, warnings } = normalizeAiDiagram(
+        result.diagram,
+        database,
+      );
       const allWarnings = [...(result.warnings ?? []), ...warnings];
 
       applyImportedDiagram(diagram);
