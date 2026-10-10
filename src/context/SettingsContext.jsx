@@ -1,6 +1,5 @@
 import { createContext, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { tableWidth } from "../data/constants";
 import { queryConfig } from "../utils/queryConfig";
 
 const defaultSettings = {
@@ -12,8 +11,7 @@ const defaultSettings = {
   mode: "light",
   autosave: true,
   showCardinality: true,
-  showRelationshipLabels: true,
-  tableWidth: tableWidth,
+  showRelationshipLabels: false,
   showDebugCoordinates: false,
   showComments: false,
   zoomSensitivity: 5,
