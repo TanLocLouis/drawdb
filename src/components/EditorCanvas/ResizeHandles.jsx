@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clampTableWidth } from "../../utils/utils";
-import { useSettings } from "../../hooks";
+import { useSettings, useTransform } from "../../hooks";
 
 const handleRadius = 6;
 const handleHitWidth = handleRadius * 2 + 2;
@@ -18,6 +18,7 @@ export default function ResizeHandles({
   onEngagedChange,
 }) {
   const { settings } = useSettings();
+  const { getTransform } = useTransform();
   const [active, setActive] = useState(null);
   const [hovered, setHovered] = useState(null);
   const latestRef = useRef(null);
@@ -36,12 +37,13 @@ export default function ResizeHandles({
     if (!e.isPrimary) return;
     e.stopPropagation();
 
+    const currentZoom = zoom ?? getTransform?.().zoom ?? 1;
     const from = {
       x,
       width,
       clientX: e.clientX,
       pointerId: e.pointerId,
-      zoom: zoom || 1,
+      zoom: currentZoom,
     };
     setActive(side);
 

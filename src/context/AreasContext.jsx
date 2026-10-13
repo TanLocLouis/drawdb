@@ -1,5 +1,5 @@
 import { Toast } from "@douyinfe/semi-ui";
-import { createContext, useState } from "react";
+import { createContext, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Action, ObjectType, defaultBlue } from "../data/constants";
 import { useSelect, useTransform, useUndoRedo, useCollab } from "../hooks";
@@ -9,7 +9,7 @@ export const AreasContext = createContext(null);
 export default function AreasContextProvider({ children }) {
   const { t } = useTranslation();
   const [areas, setAreas] = useState([]);
-  const { transform } = useTransform();
+  const { getTransform } = useTransform();
   const { selectedElement, setSelectedElement } = useSelect();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { emitDelta, isApplyingRemoteRef } = useCollab();
@@ -26,11 +26,12 @@ export default function AreasContextProvider({ children }) {
     } else {
       const width = 200;
       const height = 200;
+      const currentTransform = getTransform?.() ?? { pan: { x: 0, y: 0 } };
       created = {
         id: areas.length,
         name: `area_${areas.length}`,
-        x: transform.pan.x - width / 2,
-        y: transform.pan.y - height / 2,
+        x: currentTransform.pan.x - width / 2,
+        y: currentTransform.pan.y - height / 2,
         width,
         height,
         color: defaultBlue,
@@ -116,17 +117,20 @@ export default function AreasContextProvider({ children }) {
     }
   };
 
+  const contextValue = useMemo(
+    () => ({
+      areas,
+      setAreas,
+      updateArea,
+      addArea,
+      deleteArea,
+      areasCount: areas.length,
+    }),
+    [areas, setAreas, updateArea, deleteArea],
+  );
+
   return (
-    <AreasContext.Provider
-      value={{
-        areas,
-        setAreas,
-        updateArea,
-        addArea,
-        deleteArea,
-        areasCount: areas.length,
-      }}
-    >
+    <AreasContext.Provider value={contextValue}>
       {children}
     </AreasContext.Provider>
   );

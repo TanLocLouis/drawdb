@@ -1,4 +1,4 @@
-import { createContext, useCallback, useState } from "react";
+import { createContext, useCallback, useMemo, useRef, useState } from "react";
 
 export const TransformContext = createContext(null);
 
@@ -7,6 +7,11 @@ export default function TransformContextProvider({ children }) {
     zoom: 1,
     pan: { x: 0, y: 0 },
   });
+
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+
+  const getTransform = useCallback(() => transformRef.current, []);
 
   /**
    * @type {typeof DrawDB.TransformContext["setTransform"]}
@@ -22,7 +27,7 @@ export default function TransformContextProvider({ children }) {
           actionOrValue = actionOrValue(prev);
         }
 
-        return {
+        const next = {
           zoom: clamp(
             findFirstNumber(actionOrValue.zoom, prev.zoom, 1),
             0.02,
@@ -33,14 +38,26 @@ export default function TransformContextProvider({ children }) {
             y: findFirstNumber(actionOrValue.pan?.y, prev.pan?.y, 0),
           },
         };
+        transformRef.current = next;
+        return next;
       });
     },
-    [setTransformInternal],
+    [],
+  );
+
+  const contextValue = useMemo(
+    () => ({
+      transform,
+      setTransform,
+      getTransform,
+    }),
+    [transform, setTransform, getTransform],
   );
 
   return (
-    <TransformContext.Provider value={{ transform, setTransform }}>
+    <TransformContext.Provider value={contextValue}>
       {children}
     </TransformContext.Provider>
   );
 }
+

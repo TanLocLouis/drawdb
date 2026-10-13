@@ -1,4 +1,4 @@
-import { createContext, useState } from "react";
+import { createContext, useMemo, useState } from "react";
 import { Action, ObjectType, defaultBlue } from "../data/constants";
 import { useTransform, useUndoRedo, useSelect, useCollab } from "../hooks";
 import { Toast } from "@douyinfe/semi-ui";
@@ -10,7 +10,7 @@ export const ViewsContext = createContext(null);
 export default function ViewsContextProvider({ children }) {
   const { t } = useTranslation();
   const [views, setViews] = useState([]);
-  const { transform } = useTransform();
+  const { getTransform } = useTransform();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { selectedElement, setSelectedElement } = useSelect();
   const { emitDelta, isApplyingRemoteRef } = useCollab();
@@ -19,11 +19,12 @@ export default function ViewsContextProvider({ children }) {
 
   const addView = (data, addToHistory = true) => {
     const id = nanoid();
+    const currentTransform = getTransform?.() ?? { pan: { x: 0, y: 0 } };
     const newView = {
       id,
       name: `view_${views.length}`,
-      x: transform.pan.x,
-      y: transform.pan.y,
+      x: currentTransform.pan.x,
+      y: currentTransform.pan.y,
       baseTableId: null,
       joins: [],
       columns: [],
@@ -118,17 +119,20 @@ export default function ViewsContextProvider({ children }) {
     }
   };
 
+  const contextValue = useMemo(
+    () => ({
+      views,
+      setViews,
+      addView,
+      updateView,
+      deleteView,
+      viewsCount: views.length,
+    }),
+    [views, setViews, updateView, deleteView],
+  );
+
   return (
-    <ViewsContext.Provider
-      value={{
-        views,
-        setViews,
-        addView,
-        updateView,
-        deleteView,
-        viewsCount: views.length,
-      }}
-    >
+    <ViewsContext.Provider value={contextValue}>
       {children}
     </ViewsContext.Provider>
   );

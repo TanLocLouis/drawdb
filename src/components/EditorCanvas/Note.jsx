@@ -37,7 +37,7 @@ function Note({ data, onPointerDown }) {
   const { setSaveState } = useSaveState();
   const { updateNote, deleteNote } = useNotes();
   const { setUndoStack, setRedoStack } = useUndoRedo();
-  const { transform } = useTransform();
+  const { getTransform } = useTransform();
   const { settings } = useSettings();
   const {
     selectedElement,
@@ -296,7 +296,8 @@ function Note({ data, onPointerDown }) {
           }}
           onPointerMove={(e) => {
             if (!resizing) return;
-            const delta = e.movementX / (transform?.zoom || 1);
+            const currentZoom = getTransform?.().zoom || 1;
+            const delta = e.movementX / currentZoom;
             const currentWidth = data.width ?? noteWidth;
             let proposedWidth = currentWidth - delta;
             let proposedX = data.x + delta;
@@ -355,7 +356,8 @@ function Note({ data, onPointerDown }) {
           }}
           onPointerMove={(e) => {
             if (!resizing) return;
-            const delta = e.movementX / (transform?.zoom || 1);
+            const currentZoom = getTransform?.().zoom || 1;
+            const delta = e.movementX / currentZoom;
             const next = Math.max(
               MIN_NOTE_WIDTH,
               (data.width ?? noteWidth) + delta,

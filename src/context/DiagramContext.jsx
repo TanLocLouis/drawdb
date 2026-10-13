@@ -1,4 +1,4 @@
-import { createContext, useCallback, useState } from "react";
+import { createContext, useCallback, useMemo, useState } from "react";
 import { Action, DB, ObjectType, defaultBlue } from "../data/constants";
 import { useTransform, useUndoRedo, useSelect, useCollab } from "../hooks";
 import { Toast } from "@douyinfe/semi-ui";
@@ -13,7 +13,7 @@ export default function DiagramContextProvider({ children }) {
   const [database, setDatabaseRaw] = useState(DB.GENERIC);
   const [tables, setTables] = useState([]);
   const [relationships, setRelationships] = useState([]);
-  const { transform } = useTransform();
+  const { getTransform } = useTransform();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { selectedElement, setSelectedElement } = useSelect();
   const { emitDelta, isApplyingRemoteRef } = useCollab();
@@ -36,12 +36,13 @@ export default function DiagramContextProvider({ children }) {
   );
 
   const addTable = (data, addToHistory = true) => {
+    const currentTransform = getTransform?.() ?? { pan: { x: 0, y: 0 } };
     const id = nanoid();
     const newTable = {
       id,
       name: `table_${id}`,
-      x: transform.pan.x,
-      y: transform.pan.y,
+      x: currentTransform.pan.x,
+      y: currentTransform.pan.y,
       locked: false,
       fields: [
         {
@@ -314,27 +315,37 @@ export default function DiagramContextProvider({ children }) {
     }
   };
 
+  const contextValue = useMemo(
+    () => ({
+      tables,
+      setTables,
+      addTable,
+      updateTable,
+      updateField,
+      deleteField,
+      deleteTable,
+      relationships,
+      setRelationships,
+      addRelationship,
+      deleteRelationship,
+      updateRelationship,
+      database,
+      setDatabase,
+      tablesCount: tables.length,
+      relationshipsCount: relationships.length,
+    }),
+    [
+      tables,
+      setTables,
+      relationships,
+      setRelationships,
+      database,
+      setDatabase,
+    ],
+  );
+
   return (
-    <DiagramContext.Provider
-      value={{
-        tables,
-        setTables,
-        addTable,
-        updateTable,
-        updateField,
-        deleteField,
-        deleteTable,
-        relationships,
-        setRelationships,
-        addRelationship,
-        deleteRelationship,
-        updateRelationship,
-        database,
-        setDatabase,
-        tablesCount: tables.length,
-        relationshipsCount: relationships.length,
-      }}
-    >
+    <DiagramContext.Provider value={contextValue}>
       {children}
     </DiagramContext.Provider>
   );

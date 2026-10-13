@@ -1,4 +1,4 @@
-import { createContext, useState, useCallback } from "react";
+import { createContext, useState, useCallback, useMemo } from "react";
 import {
   Action,
   ObjectType,
@@ -14,7 +14,7 @@ export const NotesContext = createContext(null);
 export default function NotesContextProvider({ children }) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState([]);
-  const { transform } = useTransform();
+  const { getTransform } = useTransform();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { selectedElement, setSelectedElement } = useSelect();
   const { emitDelta, isApplyingRemoteRef } = useCollab();
@@ -30,10 +30,11 @@ export default function NotesContextProvider({ children }) {
       });
     } else {
       const height = 88;
+      const currentTransform = getTransform?.() ?? { pan: { x: 0, y: 0 } };
       created = {
         id: notes.length,
-        x: transform.pan.x,
-        y: transform.pan.y - height / 2,
+        x: currentTransform.pan.x,
+        y: currentTransform.pan.y - height / 2,
         title: `note_${notes.length}`,
         content: "",
         locked: false,
@@ -125,17 +126,20 @@ export default function NotesContextProvider({ children }) {
     [emitDelta],
   );
 
+  const contextValue = useMemo(
+    () => ({
+      notes,
+      setNotes,
+      updateNote,
+      addNote,
+      deleteNote,
+      notesCount: notes.length,
+    }),
+    [notes, setNotes, updateNote, deleteNote],
+  );
+
   return (
-    <NotesContext.Provider
-      value={{
-        notes,
-        setNotes,
-        updateNote,
-        addNote,
-        deleteNote,
-        notesCount: notes.length,
-      }}
-    >
+    <NotesContext.Provider value={contextValue}>
       {children}
     </NotesContext.Provider>
   );

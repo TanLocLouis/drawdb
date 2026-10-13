@@ -33,7 +33,6 @@ import {
   useDiagram,
   useSelect,
   useUndoRedo,
-  useTransform,
 } from "../../hooks";
 import TableInfo from "../EditorSidePanel/TablesTab/TableInfo";
 import { useTranslation } from "react-i18next";
@@ -73,7 +72,6 @@ function Table({
   } = useDiagram();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { settings } = useSettings();
-  const { transform } = useTransform();
   const { t } = useTranslation();
   const {
     selectedElement,
@@ -530,7 +528,6 @@ function Table({
           y={tableData.y}
           width={width}
           height={height}
-          zoom={transform.zoom}
           visible={hovered}
           onResize={resizeTable}
           onResizeEnd={commitResize}
