@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, memo } from "react";
 import {
   Button,
   ButtonGroup,
@@ -25,7 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useHover } from "usehooks-ts";
 
-export default function Area({
+function Area({
   data,
   onPointerDown,
   setResize,
@@ -358,3 +358,7 @@ function EditPopoverContent({ data }) {
     </div>
   );
 }
+
+export default memo(Area, (prevProps, nextProps) => {
+  return prevProps.data === nextProps.data;
+});

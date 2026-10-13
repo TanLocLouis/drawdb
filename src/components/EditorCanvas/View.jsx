@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import { Action, Tab, ObjectType } from "../../data/constants";
 import {
   IconMore,
@@ -35,7 +35,7 @@ import {
 } from "../../utils/views";
 import ResizeHandles from "./ResizeHandles";
 
-export default function View({ viewData, onPointerDown }) {
+function View({ viewData, onPointerDown }) {
   const [hovered, setHovered] = useState(false);
   const [resizeEngaged, setResizeEngaged] = useState(false);
   const { layout } = useLayout();
@@ -388,3 +388,7 @@ export default function View({ viewData, onPointerDown }) {
     </>
   );
 }
+
+export default memo(View, (prevProps, nextProps) => {
+  return prevProps.viewData === nextProps.viewData;
+});

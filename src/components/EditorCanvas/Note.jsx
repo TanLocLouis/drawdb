@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, memo } from "react";
 import { Action, ObjectType, Tab, State } from "../../data/constants";
 import {
   Input,
@@ -26,7 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { noteWidth, noteRadius, noteFold } from "../../data/constants";
 
-export default function Note({ data, onPointerDown }) {
+function Note({ data, onPointerDown }) {
   const [editField, setEditField] = useState({});
   const [hovered, setHovered] = useState(false);
   const [resizing, setResizing] = useState(false);
@@ -539,3 +539,7 @@ export default function Note({ data, onPointerDown }) {
     </g>
   );
 }
+
+export default memo(Note, (prevProps, nextProps) => {
+  return prevProps.data === nextProps.data;
+});

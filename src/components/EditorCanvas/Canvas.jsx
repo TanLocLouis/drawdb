@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Slot } from "../../context/ExtensionsContext";
 import {
   Action,
@@ -47,6 +47,12 @@ import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
 import { State, noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
 
+const notDragging = {
+  id: -1,
+  type: ObjectType.NONE,
+  grabOffset: { x: 0, y: 0 },
+};
+
 export default function Canvas() {
   const { t } = useTranslation();
 
@@ -54,6 +60,7 @@ export default function Canvas() {
   const canvasContextValue = useCanvas();
   const {
     canvas: { viewBox },
+    coords: { toDiagramSpace },
     pointer,
   } = canvasContextValue;
 
@@ -73,12 +80,25 @@ export default function Canvas() {
     bulkSelectedElements,
     setBulkSelectedElements,
   } = useSelect();
-  const notDragging = {
-    id: -1,
-    type: ObjectType.NONE,
-    grabOffset: { x: 0, y: 0 },
-  };
   const [dragging, setDragging] = useState(notDragging);
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 });
+  const dragRef = useRef({
+    active: false,
+    mainElement: null,
+    elements: [],
+    delta: { x: 0, y: 0 },
+  });
+  const dragRafRef = useRef(null);
+  const canvasRectRef = useRef(null);
+  const elementPointerDownRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+      }
+    };
+  }, []);
   const [linking, setLinking] = useState(false);
   const [linkingLine, setLinkingLine] = useState({
     startTableId: -1,
@@ -142,13 +162,73 @@ export default function Canvas() {
     ctrlKey: false,
     metaKey: false,
   });
-  // this is used to store the element that is clicked on
-  // at the moment, and shouldn't be a part of the state
-  let elementPointerDown = null;
-
   const isSameElement = (el1, el2) => {
     return el1.id === el2.id && el1.type === el2.type;
   };
+
+  const displayTables = useMemo(() => {
+    if (dragDelta.x === 0 && dragDelta.y === 0) return tables;
+    const movingIds = new Set(
+      dragRef.current.elements
+        .filter((el) => el.type === ObjectType.TABLE)
+        .map((el) => el.id),
+    );
+    if (movingIds.size === 0) return tables;
+    return tables.map((t) => {
+      if (movingIds.has(t.id)) {
+        return { ...t, x: t.x + dragDelta.x, y: t.y + dragDelta.y };
+      }
+      return t;
+    });
+  }, [tables, dragDelta]);
+
+  const displayAreas = useMemo(() => {
+    if (dragDelta.x === 0 && dragDelta.y === 0) return areas;
+    const movingIds = new Set(
+      dragRef.current.elements
+        .filter((el) => el.type === ObjectType.AREA)
+        .map((el) => el.id),
+    );
+    if (movingIds.size === 0) return areas;
+    return areas.map((a) => {
+      if (movingIds.has(a.id)) {
+        return { ...a, x: a.x + dragDelta.x, y: a.y + dragDelta.y };
+      }
+      return a;
+    });
+  }, [areas, dragDelta]);
+
+  const displayNotes = useMemo(() => {
+    if (dragDelta.x === 0 && dragDelta.y === 0) return notes;
+    const movingIds = new Set(
+      dragRef.current.elements
+        .filter((el) => el.type === ObjectType.NOTE)
+        .map((el) => el.id),
+    );
+    if (movingIds.size === 0) return notes;
+    return notes.map((n) => {
+      if (movingIds.has(n.id)) {
+        return { ...n, x: n.x + dragDelta.x, y: n.y + dragDelta.y };
+      }
+      return n;
+    });
+  }, [notes, dragDelta]);
+
+  const displayViews = useMemo(() => {
+    if (dragDelta.x === 0 && dragDelta.y === 0) return views;
+    const movingIds = new Set(
+      dragRef.current.elements
+        .filter((el) => el.type === ObjectType.VIEW)
+        .map((el) => el.id),
+    );
+    if (movingIds.size === 0) return views;
+    return views.map((v) => {
+      if (movingIds.has(v.id)) {
+        return { ...v, x: v.x + dragDelta.x, y: v.y + dragDelta.y };
+      }
+      return v;
+    });
+  }, [views, dragDelta]);
 
   const collectSelectedElements = () => {
     const rect = getRectFromEndpoints(bulkSelectRect);
@@ -281,8 +361,6 @@ export default function Canvas() {
       show: false,
     }));
 
-    // this is the object that will be added to the bulk selected elements
-    // if necessary
     const elementInBulk = {
       id: element.id,
       type,
@@ -319,14 +397,76 @@ export default function Canvas() {
     if (!isSelected) {
       setBulkSelectedElements([elementInBulk]);
     }
+
+    if (canvasRef.current) {
+      canvasRectRef.current = canvasRef.current.getBoundingClientRect();
+    }
+    const rect = canvasRectRef.current;
+    const diagPos = rect
+      ? toDiagramSpace({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        })
+      : pointer.spaces.diagram;
+
+    const grabOffset = {
+      x: diagPos.x - element.x,
+      y: diagPos.y - element.y,
+    };
+
+    const getElementCoords = (el) => {
+      if (el.currentCoords?.x !== undefined) return el.currentCoords;
+      if (el.type === ObjectType.TABLE) {
+        const t = tables.find((item) => item.id === el.id);
+        if (t) return { x: t.x, y: t.y };
+      } else if (el.type === ObjectType.AREA) {
+        const a = areas.find((item) => item.id === el.id);
+        if (a) return { x: a.x, y: a.y };
+      } else if (el.type === ObjectType.NOTE) {
+        const n = notes.find((item) => item.id === el.id);
+        if (n) return { x: n.x, y: n.y };
+      } else if (el.type === ObjectType.VIEW) {
+        const v = views.find((item) => item.id === el.id);
+        if (v) return { x: v.x, y: v.y };
+      }
+      return { x: el.x ?? 0, y: el.y ?? 0 };
+    };
+
+    const movingElements = isSelected
+      ? bulkSelectedElements.map((el) => {
+          const coords = getElementCoords(el);
+          return {
+            id: el.id,
+            type: el.type,
+            initialCoords: { x: coords.x, y: coords.y },
+          };
+        })
+      : [
+          {
+            id: element.id,
+            type,
+            initialCoords: { x: element.x, y: element.y },
+          },
+        ];
+
+    dragRef.current = {
+      active: true,
+      mainElement: {
+        id: element.id,
+        type,
+        grabOffset,
+        initialCoords: { x: element.x, y: element.y },
+      },
+      elements: movingElements,
+      delta: { x: 0, y: 0 },
+    };
+
     setDragging({
       id: element.id,
       type,
-      grabOffset: {
-        x: pointer.spaces.diagram.x - element.x,
-        y: pointer.spaces.diagram.y - element.y,
-      },
+      grabOffset,
     });
+    setDragDelta({ x: 0, y: 0 });
   };
 
   const coordinatesAfterSnappingToGrid = ({ x, y }) => {
@@ -347,16 +487,27 @@ export default function Canvas() {
 
     if (!e.isPrimary) return;
 
+    if (!canvasRectRef.current && canvasRef.current) {
+      canvasRectRef.current = canvasRef.current.getBoundingClientRect();
+    }
+    const rect = canvasRectRef.current;
+    const currentScreen = rect
+      ? { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      : pointer.spaces.screen;
+    const currentDiagram = rect
+      ? toDiagramSpace(currentScreen)
+      : pointer.spaces.diagram;
+
     if (panning.isPanning) {
       setTransform((prev) => ({
         ...prev,
         pan: {
           x:
             panning.panStart.x +
-            (panning.cursorStart.x - pointer.spaces.screen.x) / transform.zoom,
+            (panning.cursorStart.x - currentScreen.x) / transform.zoom,
           y:
             panning.panStart.y +
-            (panning.cursorStart.y - pointer.spaces.screen.y) / transform.zoom,
+            (panning.cursorStart.y - currentScreen.y) / transform.zoom,
         },
       }));
       return;
@@ -367,51 +518,34 @@ export default function Canvas() {
     if (linking) {
       setLinkingLine({
         ...linkingLine,
-        endX: pointer.spaces.diagram.x,
-        endY: pointer.spaces.diagram.y,
+        endX: currentDiagram.x,
+        endY: currentDiagram.y,
       });
       return;
     }
 
-    if (isDragging()) {
+    if (dragRef.current.active) {
       const { x: mainElementFinalX, y: mainElementFinalY } =
         coordinatesAfterSnappingToGrid({
-          x: pointer.spaces.diagram.x - dragging.grabOffset.x,
-          y: pointer.spaces.diagram.y - dragging.grabOffset.y,
+          x: currentDiagram.x - dragRef.current.mainElement.grabOffset.x,
+          y: currentDiagram.y - dragRef.current.mainElement.grabOffset.y,
         });
 
-      const { currentCoords } = bulkSelectedElements.find((el) =>
-        isSameElement(el, dragging),
-      );
+      const deltaX =
+        mainElementFinalX - dragRef.current.mainElement.initialCoords.x;
+      const deltaY =
+        mainElementFinalY - dragRef.current.mainElement.initialCoords.y;
 
-      const deltaX = mainElementFinalX - currentCoords.x;
-      const deltaY = mainElementFinalY - currentCoords.y;
+      dragRef.current.delta = { x: deltaX, y: deltaY };
 
-      const newBulkSelectedElements = [];
-      bulkSelectedElements.forEach((el) => {
-        const elementFinalCoords = {
-          x: el.currentCoords.x + deltaX,
-          y: el.currentCoords.y + deltaY,
-        };
-        if (el.type === ObjectType.TABLE) {
-          updateTable(el.id, { ...elementFinalCoords });
-        }
-        if (el.type === ObjectType.AREA) {
-          updateArea(el.id, { ...elementFinalCoords });
-        }
-        if (el.type === ObjectType.NOTE) {
-          updateNote(el.id, { ...elementFinalCoords });
-        }
-        if (el.type === ObjectType.VIEW) {
-          updateView(el.id, { ...elementFinalCoords });
-        }
-        newBulkSelectedElements.push({
-          ...el,
-          currentCoords: elementFinalCoords,
+      if (dragRafRef.current === null) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          dragRafRef.current = null;
+          if (dragRef.current.active) {
+            setDragDelta({ ...dragRef.current.delta });
+          }
         });
-      });
-
-      setBulkSelectedElements(newBulkSelectedElements);
+      }
       return;
     }
 
@@ -419,7 +553,7 @@ export default function Canvas() {
       if (areaResize.dir === "none") return;
       let newDims = { ...areaInitDimensions };
       setPanning((old) => ({ ...old, isPanning: false }));
-      const { x, y } = coordinatesAfterSnappingToGrid(pointer.spaces.diagram);
+      const { x, y } = coordinatesAfterSnappingToGrid(currentDiagram);
 
       switch (areaResize.dir) {
         case "br":
@@ -469,8 +603,8 @@ export default function Canvas() {
     if (bulkSelectRect.show) {
       setBulkSelectRect((prev) => ({
         ...prev,
-        x2: pointer.spaces.diagram.x,
-        y2: pointer.spaces.diagram.y,
+        x2: currentDiagram.x,
+        y2: currentDiagram.y,
       }));
     }
   };
@@ -490,22 +624,36 @@ export default function Canvas() {
     )
       return;
 
+    if (canvasRef.current) {
+      canvasRectRef.current = canvasRef.current.getBoundingClientRect();
+    }
+    const rect = canvasRectRef.current;
+    const currentScreen = rect
+      ? { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      : pointer.spaces.screen;
+    const currentDiagram = rect
+      ? toDiagramSpace(currentScreen)
+      : pointer.spaces.diagram;
+
+    const clickedElement = elementPointerDownRef.current;
+    elementPointerDownRef.current = null;
+
     const isMouseLeftButton = e.button === 0;
     const isMouseMiddleButton = e.button === 1;
     const isMouseRightButton = e.button === 2;
 
     if (isMouseLeftButton) {
       setBulkSelectRect({
-        x1: pointer.spaces.diagram.x,
-        y1: pointer.spaces.diagram.y,
-        x2: pointer.spaces.diagram.x,
-        y2: pointer.spaces.diagram.y,
-        show: elementPointerDown === null || !elementPointerDown.element.locked,
+        x1: currentDiagram.x,
+        y1: currentDiagram.y,
+        x2: currentDiagram.x,
+        y2: currentDiagram.y,
+        show: clickedElement === null || !clickedElement.element.locked,
         ctrlKey: e.ctrlKey,
         metaKey: e.metaKey,
       });
-      if (elementPointerDown !== null) {
-        handlePointerDownOnElement(e, elementPointerDown);
+      if (clickedElement !== null) {
+        handlePointerDownOnElement(e, clickedElement);
       }
       pointer.setStyle("crosshair");
     } else if (isMouseMiddleButton || isMouseRightButton) {
@@ -515,23 +663,14 @@ export default function Canvas() {
         panStart: transform.pan,
         // Diagram space depends on the current panning.
         // Use screen space to avoid circular dependencies and undefined behavior.
-        cursorStart: pointer.spaces.screen,
+        cursorStart: currentScreen,
       });
       pointer.setStyle("grabbing");
     }
   };
 
   const isDragging = () => {
-    return dragging.type !== ObjectType.NONE && dragging.id !== -1;
-  };
-
-  const didDrag = () => {
-    if (!isDragging()) return false;
-    // checking any element is sufficient
-    const { currentCoords, initialCoords } = bulkSelectedElements[0];
-    return (
-      currentCoords.x !== initialCoords.x || currentCoords.y !== initialCoords.y
-    );
+    return dragRef.current.active || dragging.type !== ObjectType.NONE;
   };
 
   const didResize = (id) => {
@@ -557,35 +696,90 @@ export default function Canvas() {
 
     if (!e.isPrimary) return;
 
-    if (didDrag()) {
-      setUndoStack((prev) => [
-        ...prev,
-        {
-          action: Action.MOVE,
-          bulk: true,
-          message: t("bulk_update"),
-          elements: bulkSelectedElements.map((el) => ({
-            id: el.id,
-            type: el.type,
-            undo: el.initialCoords,
-            redo: el.currentCoords,
-          })),
-        },
-      ]);
-      setRedoStack([]);
-      setBulkSelectedElements((prev) =>
-        prev.map((el) => ({
-          ...el,
-          initialCoords: { ...el.currentCoords },
-        })),
-      );
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+
+    if (dragRef.current.active) {
+      const finalDelta = dragRef.current.delta;
+      const didMove = finalDelta.x !== 0 || finalDelta.y !== 0;
+
+      if (didMove) {
+        const movedElements = dragRef.current.elements;
+        const finalCoordsMap = new Map();
+
+        movedElements.forEach((el) => {
+          const finalCoords = {
+            x: el.initialCoords.x + finalDelta.x,
+            y: el.initialCoords.y + finalDelta.y,
+          };
+          finalCoordsMap.set(`${el.type}_${el.id}`, finalCoords);
+
+          if (el.type === ObjectType.TABLE) {
+            updateTable(el.id, finalCoords);
+          } else if (el.type === ObjectType.AREA) {
+            updateArea(el.id, finalCoords);
+          } else if (el.type === ObjectType.NOTE) {
+            updateNote(el.id, finalCoords);
+          } else if (el.type === ObjectType.VIEW) {
+            updateView(el.id, finalCoords);
+          }
+        });
+
+        setUndoStack((prev) => [
+          ...prev,
+          {
+            action: Action.MOVE,
+            bulk: true,
+            message: t("bulk_update"),
+            elements: movedElements.map((el) => ({
+              id: el.id,
+              type: el.type,
+              undo: el.initialCoords,
+              redo: {
+                x: el.initialCoords.x + finalDelta.x,
+                y: el.initialCoords.y + finalDelta.y,
+              },
+            })),
+          },
+        ]);
+        setRedoStack([]);
+        setBulkSelectedElements((prev) =>
+          prev.map((el) => {
+            const finalCoords = finalCoordsMap.get(`${el.type}_${el.id}`);
+            if (finalCoords) {
+              return {
+                ...el,
+                initialCoords: { ...finalCoords },
+                currentCoords: { ...finalCoords },
+              };
+            }
+            return el;
+          }),
+        );
+      }
+
+      dragRef.current.active = false;
+      dragRef.current.delta = { x: 0, y: 0 };
+      dragRef.current.elements = [];
+      setDragDelta({ x: 0, y: 0 });
+      setDragging(notDragging);
     }
 
     if (bulkSelectRect.show) {
+      if (!canvasRectRef.current && canvasRef.current) {
+        canvasRectRef.current = canvasRef.current.getBoundingClientRect();
+      }
+      const rect = canvasRectRef.current;
+      const currentDiagram = rect
+        ? toDiagramSpace({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+        : pointer.spaces.diagram;
+
       setBulkSelectRect((prev) => ({
         ...prev,
-        x2: pointer.spaces.diagram.x,
-        y2: pointer.spaces.diagram.y,
+        x2: currentDiagram.x,
+        y2: currentDiagram.y,
         show: false,
       }));
       if (!isDragging()) {
@@ -636,11 +830,15 @@ export default function Canvas() {
     });
   };
 
-  const handleGripField = () => {
+  const handleGripField = useCallback(() => {
     setPanning((old) => ({ ...old, isPanning: false }));
     setDragging(notDragging);
+    dragRef.current.active = false;
+    dragRef.current.delta = { x: 0, y: 0 };
+    dragRef.current.elements = [];
+    setDragDelta({ x: 0, y: 0 });
     setLinking(true);
-  };
+  }, []);
 
   const getCardinality = (startField, endField) => {
     const startIsUnique = startField.unique || startField.primary;
@@ -780,6 +978,7 @@ export default function Canvas() {
           onPointerMove={handlePointerMove}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           onContextMenu={(e) => {
             if (rightClickPanned.current) {
               e.preventDefault();
@@ -819,14 +1018,14 @@ export default function Canvas() {
               />
             </>
           )}
-          {areas.map((a) => (
+          {displayAreas.map((a) => (
             <Area
               key={a.id}
               data={a}
               setResize={setAreaResize}
               setInitDimensions={setAreaInitDimensions}
               onPointerDown={() => {
-                elementPointerDown = {
+                elementPointerDownRef.current = {
                   element: a,
                   type: ObjectType.AREA,
                 };
@@ -834,9 +1033,9 @@ export default function Canvas() {
             />
           ))}
           {relationships.map((e) => (
-            <Relationship key={e.id} data={e} />
+            <Relationship key={e.id} data={e} tables={displayTables} />
           ))}
-          {tables.map((table) => (
+          {displayTables.map((table) => (
             <Table
               key={table.id}
               tableData={table}
@@ -844,19 +1043,19 @@ export default function Canvas() {
               handleGripField={handleGripField}
               setLinkingLine={setLinkingLine}
               onPointerDown={() => {
-                elementPointerDown = {
+                elementPointerDownRef.current = {
                   element: table,
                   type: ObjectType.TABLE,
                 };
               }}
             />
           ))}
-          {views.map((view) => (
+          {displayViews.map((view) => (
             <View
               key={view.id}
               viewData={view}
               onPointerDown={() => {
-                elementPointerDown = {
+                elementPointerDownRef.current = {
                   element: view,
                   type: ObjectType.VIEW,
                 };
@@ -872,12 +1071,12 @@ export default function Canvas() {
             />
           )}
           <Slot name="svg-overlay" />
-          {notes.map((n) => (
+          {displayNotes.map((n) => (
             <Note
               key={n.id}
               data={n}
               onPointerDown={() => {
-                elementPointerDown = {
+                elementPointerDownRef.current = {
                   element: n,
                   type: ObjectType.NOTE,
                 };

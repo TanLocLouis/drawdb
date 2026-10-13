@@ -1,5 +1,5 @@
 import { useTransform } from "../hooks";
-import { createContext, useCallback, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEventListener, useResizeObserver } from "usehooks-ts";
 
 export const CanvasContext = createContext({
@@ -120,20 +120,66 @@ export function CanvasContextProvider({ children, ...attrs }) {
   );
   const [pointerStyle, setPointerStyle] = useState("default");
 
+  const canvasBoundsRef = useRef(null);
+  const pointerCoordsRef = useRef({ x: 0, y: 0 });
+  const pointerRafRef = useRef(null);
+
+  const updateCanvasBounds = useCallback(() => {
+    if (canvasWrapRef.current) {
+      canvasBoundsRef.current = canvasWrapRef.current.getBoundingClientRect();
+    }
+  }, []);
+
+  useEffect(() => {
+    updateCanvasBounds();
+    window.addEventListener("resize", updateCanvasBounds);
+    window.addEventListener("scroll", updateCanvasBounds, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updateCanvasBounds);
+      window.removeEventListener("scroll", updateCanvasBounds);
+      if (pointerRafRef.current) {
+        cancelAnimationFrame(pointerRafRef.current);
+      }
+    };
+  }, [updateCanvasBounds]);
+
   /**
    * @param {PointerEvent} e
    */
   function detectPointerMovement(e) {
-    const targetElm = /** @type {HTMLElement | null} */ (e.currentTarget);
-    if (!e.isPrimary || !targetElm) return;
+    if (!e.isPrimary) return;
 
-    const canvasBounds = targetElm.getBoundingClientRect();
+    if (!canvasBoundsRef.current && canvasWrapRef.current) {
+      canvasBoundsRef.current = canvasWrapRef.current.getBoundingClientRect();
+    }
+    const canvasBounds =
+      canvasBoundsRef.current ||
+      (e.currentTarget?.getBoundingClientRect &&
+        e.currentTarget.getBoundingClientRect());
+    if (!canvasBounds) return;
 
-    setPointerActive(true);
-    setPointerScreenCoords({
+    const nextCoords = {
       x: e.clientX - canvasBounds.left,
       y: e.clientY - canvasBounds.top,
-    });
+    };
+    pointerCoordsRef.current = nextCoords;
+
+    if (!pointerActive) {
+      setPointerActive(true);
+    }
+
+    if (e.type === "pointerdown") {
+      updateCanvasBounds();
+      setPointerScreenCoords(nextCoords);
+      return;
+    }
+
+    if (pointerRafRef.current === null) {
+      pointerRafRef.current = requestAnimationFrame(() => {
+        pointerRafRef.current = null;
+        setPointerScreenCoords(pointerCoordsRef.current);
+      });
+    }
   }
 
   // Important for touch screen devices!
@@ -141,25 +187,37 @@ export function CanvasContextProvider({ children, ...attrs }) {
 
   useEventListener("pointermove", detectPointerMovement, canvasWrapRef);
 
-  const contextValue = {
-    canvas: {
+  const contextValue = useMemo(
+    () => ({
+      canvas: {
+        screenSize,
+        viewBox,
+      },
+      coords: {
+        toDiagramSpace,
+        toScreenSpace,
+      },
+      pointer: {
+        active: pointerActive,
+        spaces: {
+          screen: pointerScreenCoords,
+          diagram: pointerDiagramCoords,
+        },
+        style: pointerStyle,
+        setStyle: setPointerStyle,
+      },
+    }),
+    [
       screenSize,
       viewBox,
-    },
-    coords: {
       toDiagramSpace,
       toScreenSpace,
-    },
-    pointer: {
-      active: pointerActive,
-      spaces: {
-        screen: pointerScreenCoords,
-        diagram: pointerDiagramCoords,
-      },
-      style: pointerStyle,
-      setStyle: setPointerStyle,
-    },
-  };
+      pointerActive,
+      pointerScreenCoords,
+      pointerDiagramCoords,
+      pointerStyle,
+    ],
+  );
 
   return (
     <CanvasContext.Provider value={contextValue}>

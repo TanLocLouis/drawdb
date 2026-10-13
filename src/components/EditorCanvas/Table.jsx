@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import {
   Action,
   Tab,
@@ -51,7 +51,7 @@ import {
 } from "../../utils/utils";
 import ResizeHandles from "./ResizeHandles";
 
-export default function Table({
+function Table({
   tableData,
   onPointerDown,
   setHoveredTable,
@@ -688,3 +688,7 @@ export default function Table({
     );
   }
 }
+
+export default memo(Table, (prevProps, nextProps) => {
+  return prevProps.tableData === nextProps.tableData;
+});
